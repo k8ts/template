@@ -38,7 +38,7 @@ const ALPHA_NUMERIC = /[a-zA-Z0-9]/
 const NUMBER = /[0-9]/
 const PROPERTY_NAME = /[a-zA-Z0-9_\-]/
 const TERMINATOR = /[ .})|]/
-const VALUE_START = /[a-zA-Z0-9.(]/
+const VALUE_START = /[a-zA-Z0-9.("]/
 
 /**
  * Tokenize the input string using a finite state machine
