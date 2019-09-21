@@ -13,7 +13,5 @@
     "jest": "^24.9.0",
     "typescript": "^3.6.3"
   },
-  "dependencies": {
-    "chevrotain": "^6.5.0"
-  }
+  "dependencies": {}
 }

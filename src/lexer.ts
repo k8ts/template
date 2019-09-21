@@ -4,9 +4,13 @@ export type Token =
   | {type: 'Assignment'; existing: boolean}
   | {type: 'CloseAction'}
   | {type: 'Float'; value: string}
+  | {type: 'Function'; name: string}
+  | {type: 'GroupClose'}
+  | {type: 'GroupOpen'}
   | {type: 'Integer'; value: string}
   | {type: 'OpenAction'}
   | {type: 'Pipe'}
+  | {type: 'PropertyAccess'; property: string}
   | {type: 'String'; value: string}
   | {type: 'Text'; value: string}
   | {type: 'TrimCloseAction'}
@@ -19,7 +23,9 @@ enum State {
   Dash,
   Float,
   FloatCandidate,
+  Function,
   Integer,
+  PropertyAccess,
   String,
   Text,
   Unknown,
@@ -30,7 +36,8 @@ enum State {
 const ALPHA = /[a-zA-Z]/
 const ALPHA_NUMERIC = /[a-zA-Z0-9]/
 const NUMBER = /[0-9]/
-const TERMINATOR = /[ .}|]/
+const PROPERTY_NAME = /[a-zA-Z0-9_\-]/
+const TERMINATOR = /[ .})|]/
 const VALUE_START = /[a-zA-Z0-9.(]/
 
 /**
@@ -56,7 +63,7 @@ export function tokenize(input: string) {
         } else if (char === ' ') {
           // Ignore spaces
         } else {
-          throw new Error(`Unexpected character, expected start of a value, got: '${char}'`)
+          throw new Error(`Invalid character '${char}', expected start of a value`)
         }
         break
       }
@@ -66,7 +73,7 @@ export function tokenize(input: string) {
           tokens.push({type: 'Assignment', existing: false})
           state = State.Assignment
         } else {
-          throw new Error(`Unexpected character, expected '=', got: '${char}'`)
+          throw new Error(`Invalid character '${char}', expected '='`)
         }
         break
       }
@@ -90,7 +97,7 @@ export function tokenize(input: string) {
           idx -= 1
           state = State.Unknown
         } else {
-          throw new Error(`Unknown character, expected number or separator, got: '${char}'`)
+          throw new Error(`Invalid character '${char}', expected number or separator`)
         }
         break
       }
@@ -100,7 +107,20 @@ export function tokenize(input: string) {
           buffer += char
           state = State.Float
         } else {
-          throw new Error(`Invalid character, expected number but got: '${char}'`)
+          throw new Error(`Invalid character '${char}', expected number`)
+        }
+        break
+      }
+
+      case State.Function: {
+        if (ALPHA_NUMERIC.test(char)) {
+          buffer += char
+        } else if (TERMINATOR.test(char)) {
+          tokens.push({type: 'Function', name: buffer})
+          buffer = ''
+          state = State.Unknown
+        } else {
+          throw new Error(`Invalid character '${char}', expected alphanumeric or terminator`)
         }
         break
       }
@@ -117,7 +137,21 @@ export function tokenize(input: string) {
           idx -= 1
           state = State.Unknown
         } else {
-          throw new Error(`Unknown character, expected number, separator, or '.' but got: '${char}'`)
+          throw new Error(`Invalid character '${char}', expected number, separator, or '.'`)
+        }
+        break
+      }
+
+      case State.PropertyAccess: {
+        if (PROPERTY_NAME.test(char)) {
+          buffer += char
+        } else if (TERMINATOR.test(char)) {
+          tokens.push({type: 'PropertyAccess', property: buffer})
+          buffer = ''
+          idx -= 1
+          state = State.Unknown
+        } else {
+          throw new Error(`Invalid character '${char}', expected alphanumeric or terminator`)
         }
         break
       }
@@ -171,8 +205,17 @@ export function tokenize(input: string) {
         } else if (char === '-') {
           buffer += char
           state = State.Dash
+        } else if (ALPHA.test(char)) {
+          buffer += char
+          state = State.Function
+        } else if (char === '(') {
+          tokens.push({type: 'GroupOpen'})
+        } else if (char === ')') {
+          tokens.push({type: 'GroupClose'})
         } else if (char === '|') {
           tokens.push({type: 'Pipe'})
+        } else if (char === '.') {
+          state = State.PropertyAccess
         } else if (char === ' ') {
           // Ignore spaces here
         } else if (char === ' ' && input[idx + 1] === '-' && input[idx + 2] === '}' && input[idx + 3] === '}') {
