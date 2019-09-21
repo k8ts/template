@@ -36,7 +36,7 @@ import {tokenize} from './lexer'
 //   return renderedText
 // }
 
-const parsed = tokenize('{{23 -}} < {{- 45 | test (.this) | "}}" }}')
+const parsed = tokenize('{{ $ := -123.0 }}')
 console.log(parsed)
 // console.log(render(parsed))
 

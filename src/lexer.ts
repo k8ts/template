@@ -1,23 +1,37 @@
 import {assertNever} from './util'
 
 export type Token =
-  | {type: 'Action'; value: string}
+  | {type: 'Assignment'; existing: boolean}
   | {type: 'CloseAction'}
+  | {type: 'Float'; value: string}
+  | {type: 'Integer'; value: string}
   | {type: 'OpenAction'}
+  | {type: 'Pipe'}
+  | {type: 'String'; value: string}
   | {type: 'Text'; value: string}
   | {type: 'TrimCloseAction'}
   | {type: 'TrimOpenAction'}
+  | {type: 'Variable'; name: string}
 
 enum State {
-  /** Inside the body text document */
-  InDocument,
-
-  /** Inside the action expression */
-  InActionExpression,
-
-  /** Inside quotes in the action expression */
-  InActionExpressionQuotes,
+  Assignment,
+  AssignmentCandidate,
+  Dash,
+  Float,
+  FloatCandidate,
+  Integer,
+  String,
+  Text,
+  Unknown,
+  Variable,
+  VariableCandidate,
 }
+
+const ALPHA = /[a-zA-Z]/
+const ALPHA_NUMERIC = /[a-zA-Z0-9]/
+const NUMBER = /[0-9]/
+const TERMINATOR = /[ .}|]/
+const VALUE_START = /[a-zA-Z0-9.(]/
 
 /**
  * Tokenize the input string using a finite state machine
@@ -28,14 +42,87 @@ export function tokenize(input: string) {
   const inputLength = input.length
   const tokens: Token[] = []
 
-  let state: State = State.InDocument
+  let state: State = State.Text
   let buffer = ''
 
   for (let idx = 0; idx < inputLength; idx++) {
     const char = input[idx]
 
     switch (state) {
-      case State.InDocument: {
+      case State.Assignment: {
+        if (VALUE_START.test(char) || (char === '-' && NUMBER.test(input[idx + 1]))) {
+          idx -= 1
+          state = State.Unknown
+        } else if (char === ' ') {
+          // Ignore spaces
+        } else {
+          throw new Error(`Unexpected character, expected start of a value, got: '${char}'`)
+        }
+        break
+      }
+
+      case State.AssignmentCandidate: {
+        if (char === '=') {
+          tokens.push({type: 'Assignment', existing: false})
+          state = State.Assignment
+        } else {
+          throw new Error(`Unexpected character, expected '=', got: '${char}'`)
+        }
+        break
+      }
+
+      case State.Dash: {
+        if (NUMBER.test(char)) {
+          buffer += char
+          state = State.Integer
+        } else {
+          throw new Error(`Invalid character '${char}', expected number`)
+        }
+        break
+      }
+
+      case State.Float: {
+        if (NUMBER.test(char)) {
+          buffer += char
+        } else if (TERMINATOR.test(char)) {
+          tokens.push({type: 'Float', value: buffer})
+          buffer = ''
+          idx -= 1
+          state = State.Unknown
+        } else {
+          throw new Error(`Unknown character, expected number or separator, got: '${char}'`)
+        }
+        break
+      }
+
+      case State.FloatCandidate: {
+        if (NUMBER.test(char)) {
+          buffer += char
+          state = State.Float
+        } else {
+          throw new Error(`Invalid character, expected number but got: '${char}'`)
+        }
+        break
+      }
+
+      case State.Integer: {
+        if (NUMBER.test(char)) {
+          buffer += char
+        } else if (char === '.') {
+          buffer += char
+          state = State.FloatCandidate
+        } else if (TERMINATOR.test(char)) {
+          tokens.push({type: 'Integer', value: buffer})
+          buffer = ''
+          idx -= 1
+          state = State.Unknown
+        } else {
+          throw new Error(`Unknown character, expected number, separator, or '.' but got: '${char}'`)
+        }
+        break
+      }
+
+      case State.Text: {
         if (char === '{' && input[idx + 1] === '{') {
           if (buffer.length) {
             tokens.push({type: 'Text', value: buffer})
@@ -49,39 +136,86 @@ export function tokenize(input: string) {
             tokens.push({type: 'OpenAction'})
             idx += 1
           }
-          state = State.InActionExpression
+          state = State.Unknown
         } else {
           buffer += char
         }
         break
       }
 
-      case State.InActionExpression: {
-        if (char === ' ' && input[idx + 1] === '-' && input[idx + 2] === '}' && input[idx + 3] === '}') {
-          tokens.push({type: 'Action', value: buffer})
+      case State.String: {
+        if (char === '"' && input[idx - 1] !== '\\') {
+          tokens.push({type: 'String', value: buffer})
+          buffer = ''
+          state = State.Unknown
+        } else {
+          buffer += char
+        }
+        break
+      }
+
+      case State.Unknown: {
+        if (NUMBER.test(char)) {
+          buffer += char
+          state = State.Integer
+        } else if (char === '$') {
+          buffer += char
+          state = State.VariableCandidate
+        } else if (char === '"') {
+          state = State.String
+        } else if (char === ':') {
+          state = State.AssignmentCandidate
+        } else if (char === '=') {
+          tokens.push({type: 'Assignment', existing: true})
+          state = State.Assignment
+        } else if (char === '-') {
+          buffer += char
+          state = State.Dash
+        } else if (char === '|') {
+          tokens.push({type: 'Pipe'})
+        } else if (char === ' ') {
+          // Ignore spaces here
+        } else if (char === ' ' && input[idx + 1] === '-' && input[idx + 2] === '}' && input[idx + 3] === '}') {
           tokens.push({type: 'TrimCloseAction'})
           buffer = ''
           idx += 3
-          state = State.InDocument
+          state = State.Text
         } else if (char === '}' && input[idx + 1] === '}') {
-          tokens.push({type: 'Action', value: buffer})
           tokens.push({type: 'CloseAction'})
           buffer = ''
           idx += 1
-          state = State.InDocument
-        } else if (char === '"') {
-          buffer += char
-          state = State.InActionExpressionQuotes
+          state = State.Text
         } else {
-          buffer += char
+          throw new Error(`Unexpected character: '${char}'`)
         }
         break
       }
 
-      case State.InActionExpressionQuotes: {
-        buffer += char
-        if (char === '"' && input[idx - 1] !== '\\') {
-          state = State.InActionExpression
+      case State.Variable: {
+        if (ALPHA_NUMERIC.test(char)) {
+          buffer += char
+        } else if (TERMINATOR.test(char)) {
+          tokens.push({type: 'Variable', name: buffer})
+          buffer = ''
+          idx -= 1
+          state = State.Unknown
+        } else {
+          throw new Error(`Unexpected character, expected alphanumeric or terminator, got: '${char}'`)
+        }
+        break
+      }
+
+      case State.VariableCandidate: {
+        if (ALPHA.test(char)) {
+          buffer += char
+          state = State.Variable
+        } else if (TERMINATOR.test(char)) {
+          tokens.push({type: 'Variable', name: buffer})
+          buffer = ''
+          idx -= 1
+          state = State.Unknown
+        } else {
+          throw new Error(`Unexpected character, expected alpha or terminator, got: '${char}'`)
         }
         break
       }
@@ -92,20 +226,12 @@ export function tokenize(input: string) {
   }
 
   // Handle final state
-  switch (state) {
-    case State.InDocument: {
-      if (buffer.length) {
-        tokens.push({type: 'Text', value: buffer})
-      }
-      break
-    }
+  if (state !== State.Text) {
+    throw new Error(`Invalid file, expected file end, got unknown token: ${State[state]}`)
+  }
 
-    case State.InActionExpression:
-    case State.InActionExpressionQuotes:
-      throw new Error(`Invalid file, expected file end, got unknown token: ${State[state]}`)
-
-    default:
-      assertNever(state)
+  if (buffer.length) {
+    tokens.push({type: 'Text', value: buffer})
   }
 
   return tokens
