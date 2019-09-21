@@ -1,5 +1,6 @@
-import {tokenize, Token, TokenType} from './tokenize'
+import {tokenize, Token, TokenType} from './tokenizeTemplate'
 import {assertNever} from './util'
+import {tokenizePipeline} from './tokenizeAction'
 
 function render(tokens: Token[]): string {
   let renderedText = ''
@@ -37,6 +38,8 @@ function render(tokens: Token[]): string {
   return renderedText
 }
 
-const parsed = tokenize('{{23 -}} < {{- 45}}')
+const parsed = tokenize('{{23 -}} < {{- 45 }}')
 console.log(parsed)
 console.log(render(parsed))
+
+console.log(tokenizePipeline('if and .Values.prometheus.enabled (not .Values.prometheus.servicemonitor.enabled)'))

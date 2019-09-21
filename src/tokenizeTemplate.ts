@@ -80,7 +80,7 @@ export function tokenize(input: string) {
         if (isEndToken || isChompEndToken) {
           state = State.InDocument
           if (capturedText.length) {
-            tokens.push({type: TokenType.Action, value: capturedText})
+            tokens.push({type: TokenType.Action, value: capturedText.trim()})
             capturedText = ''
           }
           if (isEndToken) {
