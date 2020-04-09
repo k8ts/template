@@ -1,5 +1,4 @@
-import {input} from './input'
-import {tokenize} from './lexer'
+import {TemplateLexer} from './chev'
 
-const parsed = tokenize(input)
-console.log(parsed)
+const lexingResult = TemplateLexer.tokenize('this {{ .works }} well!')
+console.log(lexingResult)
